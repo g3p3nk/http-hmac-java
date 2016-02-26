@@ -47,10 +47,10 @@ public abstract class HMACHttpServlet extends HttpServlet {
 
             String authHeader = request.getHeader("Authorization");
             if (authHeader != null) {
-                Map<String, String> authorizationParameterMap = HMACUtil.convertAuthorizationIntoParameterMap(authHeader);
+                HMACAuthenticationHeader authenticationHeader = HMACAuthenticationHeader.createFromHeaderValue(authHeader);
 
-                String accessKey = authorizationParameterMap.get("id");
-                String signature = authorizationParameterMap.get("signature");
+                String accessKey = authenticationHeader.getId();
+                String signature = authenticationHeader.getSignature();
 
                 String secretKey = getSecretKey(accessKey);
 

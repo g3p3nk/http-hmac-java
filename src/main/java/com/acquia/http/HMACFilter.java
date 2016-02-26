@@ -47,10 +47,10 @@ public abstract class HMACFilter implements Filter {
 
             String authHeader = request.getHeader("Authorization");
             if (authHeader != null) {
-                Map<String, String> authorizationParameterMap = HMACUtil.convertAuthorizationIntoParameterMap(authHeader);
+                HMACAuthenticationHeader authenicationHeader = HMACAuthenticationHeader.createFromHeaderValue(authHeader);
 
-                String accessKey = authorizationParameterMap.get("id");
-                String signature = authorizationParameterMap.get("signature");
+                String accessKey = authenicationHeader.getId();
+                String signature = authenicationHeader.getSignature();
 
                 String secretKey = getSecretKey(accessKey);
 

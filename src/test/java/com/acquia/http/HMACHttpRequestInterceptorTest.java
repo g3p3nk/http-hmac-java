@@ -18,6 +18,8 @@ import org.apache.http.RequestLine;
 import org.apache.http.protocol.HttpContext;
 import org.junit.Assert;
 import org.junit.Test;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.spy;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
@@ -39,6 +41,9 @@ public class HMACHttpRequestInterceptorTest {
         HMACHttpRequestInterceptor authorizationInterceptor = new HMACHttpRequestInterceptor(realm,
             accessKey, secretKey, "SHA256");
         authorizationInterceptor.setCustomHeaders(new String[] {});
+        HMACHttpRequestInterceptor spy = spy( authorizationInterceptor );
+        doReturn(nonce).when( spy ).createNonce();
+        
         HttpEntityEnclosingRequest request = mock(HttpEntityEnclosingRequest.class);
 
         RequestLine requestLine = mock(RequestLine.class);
@@ -48,11 +53,6 @@ public class HMACHttpRequestInterceptorTest {
 
         HttpEntity requestEntity = mock(HttpEntity.class);
         when(request.getEntity()).thenReturn(requestEntity);
-
-        StringBuilder authBuilder = HMACUtil.constructAuthorizationString(realm, accessKey, nonce,
-            version, /*headers*/null, /*signature*/null);
-        Header authorizationHeader = mockHeader(authBuilder.toString());
-        when(request.getFirstHeader("Authorization")).thenReturn(authorizationHeader);
 
         Header xAuthorizationTimestampHeader = mockHeader(xAuthorizationTimestamp);
         when(request.getFirstHeader("X-Authorization-Timestamp")).thenReturn(
@@ -73,13 +73,13 @@ public class HMACHttpRequestInterceptorTest {
             }
         }).when(request).setHeader((String) anyObject(), (String) anyObject());
 
-        authorizationInterceptor.process(request, context);
+        spy.process(request, context);
 
         String calculatedAuthorization = calcAuthorizationHeader.toString();
-        Map<String, String> authorizationParameterMap = HMACUtil.convertAuthorizationIntoParameterMap(calculatedAuthorization);
+        HMACAuthenticationHeader authenticationHeader = HMACAuthenticationHeader.createFromHeaderValue(calculatedAuthorization);
 
         Assert.assertEquals("MRlPr/Z1WQY2sMthcaEqETRMw4gPYXlPcTpaLWS2gcc=",
-            authorizationParameterMap.get("signature"));
+            authenticationHeader.getSignature());
     }
 
     @Test
@@ -101,6 +101,9 @@ public class HMACHttpRequestInterceptorTest {
         HMACHttpRequestInterceptor authorizationInterceptor = new HMACHttpRequestInterceptor(realm,
             accessKey, secretKey, "SHA256");
         authorizationInterceptor.setCustomHeaders(new String[] {});
+        HMACHttpRequestInterceptor spy = spy( authorizationInterceptor );
+        doReturn(nonce).when( spy ).createNonce();
+        
         HttpEntityEnclosingRequest request = mock(HttpEntityEnclosingRequest.class);
 
         RequestLine requestLine = mock(RequestLine.class);
@@ -118,11 +121,6 @@ public class HMACHttpRequestInterceptorTest {
         HttpEntity requestEntity = mock(HttpEntity.class);
         when(requestEntity.getContent()).thenReturn(requestInputStream);
         when(request.getEntity()).thenReturn(requestEntity);
-
-        StringBuilder authBuilder = HMACUtil.constructAuthorizationString(realm, accessKey, nonce,
-            version, /*headers*/null, /*signature*/null);
-        Header authorizationHeader = mockHeader(authBuilder.toString());
-        when(request.getFirstHeader("Authorization")).thenReturn(authorizationHeader);
 
         Header contentTypeHeader = mockHeader(contentType);
         when(request.getFirstHeader("Content-Type")).thenReturn(contentTypeHeader);
@@ -144,13 +142,13 @@ public class HMACHttpRequestInterceptorTest {
             }
         }).when(request).setHeader((String) anyObject(), (String) anyObject());
 
-        authorizationInterceptor.process(request, context);
+        spy.process(request, context);
 
         String calculatedAuthorization = calcAuthorizationHeader.toString();
-        Map<String, String> authorizationParameterMap = HMACUtil.convertAuthorizationIntoParameterMap(calculatedAuthorization);
+        HMACAuthenticationHeader authenticationHeader = HMACAuthenticationHeader.createFromHeaderValue(calculatedAuthorization);
 
         Assert.assertEquals("4VtBHjqrdDeYrJySoJVDUHpN9u3vyTsyOLz4chezi98=",
-            authorizationParameterMap.get("signature"));
+            authenticationHeader.getSignature());
     }
 
     private Header mockHeader(String value) {
