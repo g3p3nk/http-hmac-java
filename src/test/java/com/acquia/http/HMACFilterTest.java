@@ -44,8 +44,13 @@ public class HMACFilterTest {
 
         String signature = "4VtBHjqrdDeYrJySoJVDUHpN9u3vyTsyOLz4chezi98=";
 
-        StringBuilder authBuilder = HMACUtil.constructAuthorizationString(realm, accessKey, nonce,
-            version, /*headers*/null, signature);
+        HMACAuthenticationHeader authenticationHeader = new HMACAuthenticationHeader();
+        authenticationHeader.setRealm(realm);
+        authenticationHeader.setId(accessKey);
+        authenticationHeader.setNonce(nonce);
+        authenticationHeader.setVersion(version);
+        authenticationHeader.setHeaders(null);
+        authenticationHeader.setSignature(signature);
 
         final ByteArrayInputStream realInputStream = new ByteArrayInputStream(reqBody.getBytes());
         ServletInputStream requestInputStream = new ServletInputStream() {
@@ -56,7 +61,7 @@ public class HMACFilterTest {
         };
 
         this.request = mock(HttpServletRequest.class);
-        when(this.request.getHeader("Authorization")).thenReturn(authBuilder.toString());
+        when(this.request.getHeader("Authorization")).thenReturn(authenticationHeader.toString());
         when(this.request.getHeader("X-Authorization-Timestamp")).thenReturn(
             xAuthorizationTimestamp);
         when(this.request.getMethod()).thenReturn(httpMethod);

@@ -3,12 +3,14 @@ package com.acquia.http;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -35,9 +37,6 @@ public class HMACMessageCreator {
     private static final String PARAMETER_X_AUTHORIZATION_TIMESTAMP = "X-Authorization-Timestamp";
     private static final String PARAMETER_CONTENT_TYPE = "Content-Type";
 
-    private final List<String> baseHeaderNames = Arrays.asList("id", "nonce", "realm", "version");
-    private final String customHeaderName = "headers";
-
     /**
      * Create the message based on the given HTTP request received and list of custom headers.
      * 
@@ -57,19 +56,16 @@ public class HMACMessageCreator {
         }
 
         String authorization = request.getHeader(PARAMETER_AUTHORIZATION);
-        Map<String, String> authorizationParameterMap = HMACUtil.convertAuthorizationIntoParameterMap(authorization);
+        HMACAuthenticationHeader authenticationHeader = HMACAuthenticationHeader.createFromHeaderValue(authorization);
 
-        Map<String, String> authorizationHeaderParameterMap = HMACUtil.buildBaseHeaderMap(
-            authorizationParameterMap, this.baseHeaderNames);
-        Map<String, String> authorizationCustomHeaderParameterMap = HMACUtil.buildCustomHeaderMap(
-            request, authorizationParameterMap.get(this.customHeaderName));
+        Map<String,String> authorizationCustomHeaderParameterMap = getHeaderValues(authenticationHeader.getHeaders(), request);
 
         String xAuthorizationTimestamp = request.getHeader(PARAMETER_X_AUTHORIZATION_TIMESTAMP);
         String contentType = request.getContentType();
         InputStream requestBody = request.getInputStream();
 
         return this.createMessage(httpVerb, host, path, queryParameters,
-            authorizationHeaderParameterMap, authorizationCustomHeaderParameterMap,
+            authenticationHeader, authorizationCustomHeaderParameterMap,
             xAuthorizationTimestamp, contentType, requestBody);
     }
 
@@ -77,10 +73,11 @@ public class HMACMessageCreator {
      * Create the message based on the given HTTP request to be sent and the list of custom header names.
      * 
      * @param request HTTP request
+     * @param authenticationHeader
      * @return The message to be encrypted
      * @throws IOException if bodyHash cannot be created
      */
-    protected String createMessage(HttpRequest request) throws IOException {
+    protected String createMessage(HttpRequest request, HMACAuthenticationHeader authenticationHeader) throws IOException {
         String httpVerb = request.getRequestLine().getMethod().toUpperCase();
 
         String host = "";
@@ -99,13 +96,7 @@ public class HMACMessageCreator {
             throw new IOException("Invalid URI", e);
         }
 
-        String authorization = request.getFirstHeader(PARAMETER_AUTHORIZATION).getValue();
-        Map<String, String> authorizationParameterMap = HMACUtil.convertAuthorizationIntoParameterMap(authorization);
-
-        Map<String, String> authorizationHeaderParameterMap = HMACUtil.buildBaseHeaderMap(
-            authorizationParameterMap, this.baseHeaderNames);
-        Map<String, String> authorizationCustomHeaderParameterMap = HMACUtil.buildCustomHeaderMap(
-            request, authorizationParameterMap.get(this.customHeaderName));
+        Map<String,String> authorizationCustomHeaderParameterMap = getHeaderValues(authenticationHeader.getHeaders(), request);
 
         String xAuthorizationTimestamp = request.getFirstHeader(PARAMETER_X_AUTHORIZATION_TIMESTAMP).getValue();
 
@@ -124,7 +115,7 @@ public class HMACMessageCreator {
         }
 
         return this.createMessage(httpVerb, host, path, queryParameters,
-            authorizationHeaderParameterMap, authorizationCustomHeaderParameterMap,
+            authenticationHeader, authorizationCustomHeaderParameterMap,
             xAuthorizationTimestamp, contentType, requestBody);
     }
 
@@ -144,7 +135,7 @@ public class HMACMessageCreator {
      * @throws IOException if bodyHash cannot be created
      */
     private String createMessage(String httpVerb, String host, String path, String queryParameters,
-            Map<String, String> authorizationHeaderParameterMap,
+            HMACAuthenticationHeader authenticationHeader,
             Map<String, String> authorizationCustomHeaderParameterMap,
             String xAuthorizationTimestamp, String contentType, InputStream requestBody)
             throws IOException {
@@ -159,18 +150,12 @@ public class HMACMessageCreator {
         result.append(queryParameters).append("\n");
 
         //adding Authorization header parameters
-        List<String> sortedKeyList = new ArrayList<String>(authorizationHeaderParameterMap.keySet());
-        Collections.sort(sortedKeyList);
-        boolean isFirst = true;
-        for (String headerKey : sortedKeyList) {
-            if (!isFirst) {
-                result.append("&");
-            }
-            result.append(headerKey.toLowerCase()).append("=").append(
-                URLEncoder.encode(authorizationHeaderParameterMap.get(headerKey), ENCODING_UTF_8).replace(
-                    "+", "%20"));
-            isFirst = false;
-        }
+        //    private final List<String> baseHeaderNames = Arrays.asList("id", "nonce", "realm", "version");
+        result.append("id=").append( encode( authenticationHeader.getId() ) );
+        result.append("&nonce=").append( encode( authenticationHeader.getNonce() ) );
+        result.append("&realm=").append( encode( authenticationHeader.getRealm() ) );
+        result.append("&version=").append( encode( authenticationHeader.getVersion() ) );
+
         result.append("\n");
 
         //adding Authorization custom header parameters
@@ -199,6 +184,10 @@ public class HMACMessageCreator {
         return result.toString();
     }
 
+    private String encode( String value ) throws UnsupportedEncodingException {
+        return URLEncoder.encode(value, ENCODING_UTF_8).replace(
+                    "+", "%20");
+    }
     /**
      * Convert InputStream into byte[]
      * 
@@ -236,5 +225,34 @@ public class HMACMessageCreator {
         }
 
         return requestBodyBytes != null && requestBodyBytes.length > 0;
+    }
+
+    private Map<String, String> getHeaderValues(String[] headers, HttpRequest request) {
+        Map<String,String> returnMap = new HashMap<String,String>();
+        if ( headers == null ) {
+            return returnMap;
+        }
+        for ( String headerKey : headers ) {
+            Header header = request.getFirstHeader(headerKey);
+            if ( header != null ) {
+                returnMap.put(headerKey,header.getValue());
+            }
+        }
+        
+        return returnMap;
+    }
+    
+    private Map<String, String> getHeaderValues(String[] headers, HttpServletRequest request) {
+        Map<String,String> returnMap = new HashMap<String,String>();
+        if ( headers == null ) {
+            return returnMap;
+        }
+        for ( String headerKey : headers ) {
+            String headerValue = request.getHeader(headerKey);
+            if ( headerValue != null ) {
+                returnMap.put(headerKey,headerValue);
+            }
+        }
+        return returnMap;
     }
 }
